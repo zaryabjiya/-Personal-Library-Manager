@@ -1,6 +1,6 @@
 import streamlit as st
 import openai
-from fpdf import FPDF
+import fpdf
 
 # Set OpenAI API Key
 openai.api_key = "YOUR_OPENAI_API_KEY"
