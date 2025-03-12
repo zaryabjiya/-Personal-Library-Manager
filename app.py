@@ -1,109 +1,105 @@
 import streamlit as st
-import base64
+import sqlite3
+import pandas as pd
+import os
 
-# Configure Page
-st.set_page_config(page_title="Professional Resume Generator", page_icon="📄", layout="centered")
+# Database Setup
+DB_FILE = "library.db"
+if not os.path.exists(DB_FILE):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, author TEXT, genre TEXT, status TEXT, cover TEXT)''')
+    conn.commit()
+    conn.close()
 
-# Custom CSS for Modern Styling
-st.markdown("""
-    <style>
-    /* Vibrant Gradient Background */
-    .stApp {
-        background: linear-gradient(135deg, #3498DB, #8E44AD);
-        color: white;
-        font-family: 'Arial', sans-serif;
-        padding: 20px;
-    }
-    /* Centered Title */
-    .title {
-        text-align: center;
-        font-size: 36px;
-        font-weight: bold;
-        color: #FFFFFF;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-    }
-    /* Stylish Input Fields */
-    .stTextInput, .stTextArea {
-        border-radius: 8px;
-        border: 1px solid #ccc;
-        padding: 12px;
-        background-color: #FFFFFF;
-        color: #2C3E50;
-    }
-    /* Buttons */
-    .stButton>button {
-        background: #27AE60;
-        color: white;
-        border-radius: 8px;
-        font-size: 18px;
-        padding: 12px;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        background: #2ECC71;
-        transform: scale(1.05);
-    }
-    /* Profile Picture */
-    .profile-img {
-        display: block;
-        margin: auto;
-        border-radius: 50%;
-        width: 150px;
-        height: 150px;
-        border: 4px solid #F1C40F;
-    }
-    /* Resume Preview */
-    .resume-preview {
-        background: white;
-        color: black;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
-        font-family: 'Arial', sans-serif;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Database Functions
+def get_books():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM books")
+    books = c.fetchall()
+    conn.close()
+    return books
 
-# Title
-st.markdown("<h1 class='title'>📄 Professional Resume Generator</h1>", unsafe_allow_html=True)
+def add_book(title, author, genre, status, cover_path):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO books (title, author, genre, status, cover) VALUES (?, ?, ?, ?, ?)", (title, author, genre, status, cover_path))
+    conn.commit()
+    conn.close()
 
-# Profile Picture Upload
-profile_pic = st.file_uploader("Upload Your Profile Picture (Optional)", type=["jpg", "jpeg", "png"])
+def delete_book(book_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM books WHERE id=?", (book_id,))
+    conn.commit()
+    conn.close()
 
-if profile_pic:
-    profile_pic_encoded = base64.b64encode(profile_pic.read()).decode("utf-8")
-    st.markdown(f"""
-        <img src="data:image/png;base64,{profile_pic_encoded}" class="profile-img" />
-    """, unsafe_allow_html=True)
+def update_book_status(book_id, new_status):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE books SET status=? WHERE id=?", (new_status, book_id))
+    conn.commit()
+    conn.close()
 
-# Input Fields
-name = st.text_input("Full Name")
-email = st.text_input("Email Address")
-phone = st.text_input("Phone Number")
-summary = st.text_area("Professional Summary")
-skills = st.text_area("Skills (comma-separated)")
-experience = st.text_area("Work Experience")
-education = st.text_area("Education")
+# Streamlit App UI
+st.set_page_config(page_title="📚 Personal Library Manager", layout="wide")
+st.title("📚 Personal Library Manager")
 
-# Generate Resume Button
-if st.button("Generate Resume"):
-    if name and email and phone and summary and skills and experience and education:
-        st.markdown("### 📜 Generated Resume Preview")
-        st.markdown(f"""
-        <div class='resume-preview'>
-            <h2>{name}</h2>
-            <p><strong>Email:</strong> {email}</p>
-            <p><strong>Phone:</strong> {phone}</p>
-            <h3>🏆 Professional Summary</h3>
-            <p>{summary}</p>
-            <h3>🔧 Skills</h3>
-            <p>{skills}</p>
-            <h3>💼 Work Experience</h3>
-            <p>{experience}</p>
-            <h3>🎓 Education</h3>
-            <p>{education}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ Please fill in all fields before generating your resume!")
+# Sidebar for Adding Books
+with st.sidebar:
+    st.header("➕ Add a New Book")
+    title = st.text_input("Book Title")
+    author = st.text_input("Author")
+    genre = st.text_input("Genre")
+    status = st.selectbox("Reading Status", ["Unread", "Reading", "Completed"])
+    cover = st.file_uploader("Upload Book Cover (Optional)", type=["jpg", "png"])
+
+    if st.button("Add Book"):
+        cover_path = f"covers/{title}.jpg" if cover else "default_cover.jpg"
+        if cover:
+            os.makedirs("covers", exist_ok=True)
+            with open(cover_path, "wb") as f:
+                f.write(cover.getbuffer())
+        add_book(title, author, genre, status, cover_path)
+        st.success(f"📖 Book '{title}' added successfully!")
+        st.experimental_rerun()
+
+# Display Books
+st.subheader("📖 Your Book Collection")
+search = st.text_input("🔍 Search by Title or Author")
+
+books = get_books()
+filtered_books = [book for book in books if search.lower() in book[1].lower() or search.lower() in book[2].lower()]
+
+if filtered_books:
+    for book in filtered_books:
+        col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 1])
+        with col1:
+            if book[5] != "default_cover.jpg":
+                st.image(book[5], width=100)
+            else:
+                st.image("default_cover.jpg", width=100)
+
+        col2.text(book[1])
+        col3.text(book[2])
+        col4.text(book[3])
+        new_status = col4.selectbox("", ["Unread", "Reading", "Completed"], index=["Unread", "Reading", "Completed"].index(book[4]), key=f"status_{book[0]}")
         
+        if new_status != book[4]:
+            update_book_status(book[0], new_status)
+            st.experimental_rerun()
+
+        if col5.button("❌ Delete", key=f"delete_{book[0]}"):
+            delete_book(book[0])
+            st.experimental_rerun()
+else:
+    st.warning("No books found. Try adding some!")
+
+# Export Books as CSV
+if books:
+    st.subheader("📂 Export Library Data")
+    df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Genre", "Status", "Cover"])
+    df.drop(columns=["ID", "Cover"], inplace=True)
+    st.download_button("Download CSV", df.to_csv(index=False), "library_data.csv", "text/csv")
+
