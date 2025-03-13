@@ -1,6 +1,2 @@
 streamlit
-pandas
-openpyxl
-openai
-sqlite3
-os
+json
