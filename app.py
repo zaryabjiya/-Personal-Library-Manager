@@ -1,105 +1,114 @@
 import streamlit as st
-import sqlite3
-import pandas as pd
-import os
+import json
 
-# Database Setup
-DB_FILE = "library.db"
-if not os.path.exists(DB_FILE):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE books (id INTEGER PRIMARY KEY, title TEXT, author TEXT, genre TEXT, status TEXT, cover TEXT)''')
-    conn.commit()
-    conn.close()
+LIBRARY_FILE = "library_data.json"
 
-# Database Functions
-def get_books():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM books")
-    books = c.fetchall()
-    conn.close()
-    return books
+def load_library():
+    try:
+        with open(LIBRARY_FILE, "r") as file:
+            return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
 
-def add_book(title, author, genre, status, cover_path):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("INSERT INTO books (title, author, genre, status, cover) VALUES (?, ?, ?, ?, ?)", (title, author, genre, status, cover_path))
-    conn.commit()
-    conn.close()
+def save_library(library):
+    with open(LIBRARY_FILE, "w") as file:
+        json.dump(library, file, indent=4)
 
-def delete_book(book_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("DELETE FROM books WHERE id=?", (book_id,))
-    conn.commit()
-    conn.close()
+# Initialize session state
+if "library" not in st.session_state:
+    st.session_state.library = load_library()
 
-def update_book_status(book_id, new_status):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE books SET status=? WHERE id=?", (new_status, book_id))
-    conn.commit()
-    conn.close()
+# Custom Styling
+st.markdown(
+    """
+    <style>
+        .stApp {
+            background: linear-gradient(to right, #1E3C72, #2A5298);
+            color: white;
+        }
+        .stSidebar {
+            background:#0A1F44;
+            color: white;
+        }
+        .stButton>button {
+            background-color: #FF6F61;
+            color: white;
+            border-radius: 8px;
+        }
+        .stTextInput>div>div>input {
+            background-color: #E3F2FD;
+            color: black;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# Streamlit App UI
-st.set_page_config(page_title="📚 Personal Library Manager", layout="wide")
-st.title("📚 Personal Library Manager")
+# App Title
+st.title("📖 My Unique Library Manager")
 
-# Sidebar for Adding Books
-with st.sidebar:
-    st.header("➕ Add a New Book")
-    title = st.text_input("Book Title")
-    author = st.text_input("Author")
-    genre = st.text_input("Genre")
-    status = st.selectbox("Reading Status", ["Unread", "Reading", "Completed"])
-    cover = st.file_uploader("Upload Book Cover (Optional)", type=["jpg", "png"])
+# Sidebar - Add Book
+st.sidebar.header("➕ Add a New Book")
+title = st.sidebar.text_input("Book Title")
+author = st.sidebar.text_input("Author")
+year = st.sidebar.number_input("Publication Year", min_value=0, step=1)
+genre = st.sidebar.text_input("Genre")
+read_status = st.sidebar.radio("Read Status", ["Unread", "Read"])
 
-    if st.button("Add Book"):
-        cover_path = f"covers/{title}.jpg" if cover else "default_cover.jpg"
-        if cover:
-            os.makedirs("covers", exist_ok=True)
-            with open(cover_path, "wb") as f:
-                f.write(cover.getbuffer())
-        add_book(title, author, genre, status, cover_path)
-        st.success(f"📖 Book '{title}' added successfully!")
-        st.experimental_rerun()
+if st.sidebar.button("Add Book"):
+    new_book = {"title": title, "author": author, "year": year, "genre": genre, "read": read_status == "Read"}
+    st.session_state.library.append(new_book)
+    save_library(st.session_state.library)
+    st.sidebar.success("📚 Book added successfully!")
+
+# Sidebar - Delete Book
+st.sidebar.header("🗑️ Remove a Book")
+titles = [book["title"] for book in st.session_state.library]
+book_to_remove = st.sidebar.selectbox("Select book to remove", ["None"] + titles)
+if st.sidebar.button("Remove Book") and book_to_remove != "None":
+    st.session_state.library = [book for book in st.session_state.library if book["title"] != book_to_remove]
+    save_library(st.session_state.library)
+    st.sidebar.success("📕 Book removed successfully!")
+
+# Sidebar - Filter Books
+st.sidebar.header("📌 Filter Books")
+filter_option = st.sidebar.radio("Show", ["All", "Read", "Unread"])
+filtered_books = [
+    book for book in st.session_state.library 
+    if (filter_option == "All") or 
+    (filter_option == "Read" and book["read"]) or 
+    (filter_option == "Unread" and not book["read"])
+]
+
+# Search Books
+st.header("🔍 Search for a Book")
+search_query = st.text_input("Enter a title or author")
+if st.button("Search"):
+    search_results = [
+        book for book in st.session_state.library 
+        if search_query.lower() in book["title"].lower() or search_query.lower() in book["author"].lower()
+    ]
+    if search_results:
+        st.subheader("📚 Matching Books:")
+        for book in search_results:
+            status = "✅ Read" if book["read"] else "❌ Unread"
+            st.write(f'- **{book["title"]}** by {book["author"]} ({book["year"]}) - {book["genre"]} - {status}')
+    else:
+        st.write("❌ No books found.")
 
 # Display Books
-st.subheader("📖 Your Book Collection")
-search = st.text_input("🔍 Search by Title or Author")
-
-books = get_books()
-filtered_books = [book for book in books if search.lower() in book[1].lower() or search.lower() in book[2].lower()]
-
+st.header("📚 Your Library")
 if filtered_books:
     for book in filtered_books:
-        col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 1])
-        with col1:
-            if book[5] != "default_cover.jpg":
-                st.image(book[5], width=100)
-            else:
-                st.image("default_cover.jpg", width=100)
-
-        col2.text(book[1])
-        col3.text(book[2])
-        col4.text(book[3])
-        new_status = col4.selectbox("", ["Unread", "Reading", "Completed"], index=["Unread", "Reading", "Completed"].index(book[4]), key=f"status_{book[0]}")
-        
-        if new_status != book[4]:
-            update_book_status(book[0], new_status)
-            st.experimental_rerun()
-
-        if col5.button("❌ Delete", key=f"delete_{book[0]}"):
-            delete_book(book[0])
-            st.experimental_rerun()
+        status = "✅ Read" if book["read"] else "❌ Unread"
+        st.write(f'- **{book["title"]}** by {book["author"]} ({book["year"]}) - {book["genre"]} - {status}')
 else:
-    st.warning("No books found. Try adding some!")
+    st.write("No books in this category!")
 
-# Export Books as CSV
-if books:
-    st.subheader("📂 Export Library Data")
-    df = pd.DataFrame(books, columns=["ID", "Title", "Author", "Genre", "Status", "Cover"])
-    df.drop(columns=["ID", "Cover"], inplace=True)
-    st.download_button("Download CSV", df.to_csv(index=False), "library_data.csv", "text/csv")
-
+# Statistics
+st.header("📊 Library Stats")
+total_books = len(st.session_state.library)
+read_books = sum(1 for book in st.session_state.library if book["read"])
+percentage_read = (read_books / total_books * 100) if total_books > 0 else 0
+st.write(f'**Total Books:** {total_books}')
+st.write(f'**Books Read:** {read_books} ({percentage_read:.2f}%)')
